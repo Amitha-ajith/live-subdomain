@@ -1,96 +1,94 @@
 #!/bin/bash
 
 # ─────────────────────────────────────────────
-# Subdomain Enumeration Script
+# 🌐 Subdomain Finder with Live Check
 # ─────────────────────────────────────────────
 
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Spinner animation
+spin() {
+    local -a marks=( '/' '-' '\' '|' )
+    while :; do
+        for m in "${marks[@]}"; do
+            printf "\r[$m] $1"
+            sleep 0.1
+        done
+    done
+}
+
 # Show Title
-echo "========================================"
-echo " 🔍 Subdomain Enumeration Tool"
-echo "========================================"
+clear
+echo -e "${CYAN}"
+echo "==============================================="
+echo " 🔍 SUBDOMAIN ENUMERATION & LIVE CHECK TOOL"
+echo "==============================================="
+echo -e "${NC}"
 
 # Prompt for domain
-read -p "Enter domain: " DOMAIN
+read -p "$(echo -e ${YELLOW}Enter domain:${NC} ) " DOMAIN
 
-# Exit if no domain entered
+# Check input
 if [ -z "$DOMAIN" ]; then
-    echo "❌ No domain entered. Exiting."
+    echo -e "${RED}❌ No domain entered. Exiting.${NC}"
     exit 1
 fi
 
-# Output Paths
+# Set output paths
 OUTPUT_DIR="${DOMAIN}_recon"
 SUBS_FILE="$OUTPUT_DIR/all_subdomains.txt"
 LIVE_FILE="$OUTPUT_DIR/live_subdomains.txt"
-README_FILE="$OUTPUT_DIR/README.md"
-
-# Create Output Folder
 mkdir -p "$OUTPUT_DIR"
 
-echo ""
-echo "[*] Finding subdomains for: $DOMAIN"
+echo -e "${BLUE}[*] Finding subdomains for: $DOMAIN${NC}"
 
-# Subfinder + Amass
-subfinder -d "$DOMAIN" -silent >> "$SUBS_FILE"
-amass enum -passive -d "$DOMAIN" >> "$SUBS_FILE"
+# Start spinner in background
+spin "Running subfinder and amass..." &
+SPIN_PID=$!
+trap "kill $SPIN_PID 2>/dev/null" EXIT
 
-# Remove Duplicates
+# Run subdomain tools
+subfinder -d "$DOMAIN" -silent >> "$SUBS_FILE" 2>/dev/null
+amass enum -passive -d "$DOMAIN" >> "$SUBS_FILE" 2>/dev/null
 sort -u "$SUBS_FILE" -o "$SUBS_FILE"
 
-echo "[*] Checking which subdomains are live..."
-cat "$SUBS_FILE" | httpx -silent -no-color > "$LIVE_FILE"
+# Stop spinner
+kill $SPIN_PID &>/dev/null
+wait $SPIN_PID 2>/dev/null
+echo -e "\r✅ Subdomain enumeration completed.            "
+
+# Check live subdomains
+echo -e "${BLUE}[*] Checking which subdomains are live...${NC}"
+
+spin "Running httpx on discovered subdomains..." &
+SPIN_PID=$!
+trap "kill $SPIN_PID 2>/dev/null" EXIT
+
+cat "$SUBS_FILE" | httpx -silent -no-color > "$LIVE_FILE" 2>/dev/null
+
+# Stop spinner
+kill $SPIN_PID &>/dev/null
+wait $SPIN_PID 2>/dev/null
+echo -e "\r✅ Live subdomain check completed.            "
 
 # Display results
-echo "========================================"
-echo "📁 All Subdomains Found:"
-cat "$SUBS_FILE"
-echo "----------------------------------------"
-echo "✅ Live Subdomains:"
-cat "$LIVE_FILE"
-echo "========================================"
-
-# Ask for GitHub push
-read -p "Do you want to push results to GitHub? (y/n): " CONFIRM
-
-if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-    echo "👋 Exiting without pushing to GitHub."
-    exit 0
-fi
-
-# Generate README.md
-cat <<EOF > "$README_FILE"
-# 🔍 Subdomain Recon for $DOMAIN
-
-This directory contains the results of subdomain enumeration and live host checking for: \`$DOMAIN\`.
-
-## 🧰 Tools Used
-- [subfinder](https://github.com/projectdiscovery/subfinder)
-- [amass](https://github.com/owasp-amass/amass)
-- [httpx](https://github.com/projectdiscovery/httpx)
-
-## 📄 Files
-- \`all_subdomains.txt\` - All subdomains discovered
-- \`live_subdomains.txt\` - Live subdomains verified using HTTP(S)
-
-## 📅 Scan Date
-- $(date)
-
-## ⚠️ Disclaimer
-Use responsibly. Do not scan domains without proper authorization.
-EOF
-
-# GitHub Push
-cd "$OUTPUT_DIR"
-
-if [ ! -d ".git" ]; then
-    git init
-    git remote add origin https://github.com/Amitha-ajith/live-subdomain  # ← Replace this!
-fi
-
-git add .
-git commit -m "Added subdomain recon data for $DOMAIN"
-git branch -M main
-git push -u origin main
-
 echo ""
-echo "✅ Results pushed to GitHub successfully!"
+echo -e "${CYAN}==============================================="
+echo "📁 Subdomains Found:"
+echo -e "===============================================${NC}"
+cat "$SUBS_FILE"
+echo ""
+echo -e "${GREEN}==============================================="
+echo "✅ Live Subdomains:"
+echo -e "===============================================${NC}"
+cat "$LIVE_FILE"
+echo ""
+
+# Done
+echo -e "${YELLOW}🎉 Scan complete! Results saved in '${OUTPUT_DIR}' folder.${NC}"
